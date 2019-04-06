@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Presentation Title</title>
+    <title>How NLL make life easier</title>
     <meta name="description" content="Some description about the slides">
     <meta name="author" content="You">
     <link rel="stylesheet" href="css/main.css">
@@ -12,13 +12,13 @@
   <body>
     <textarea id="source">class: center, middle
 
-<!--  -->
+
 .title[How NLL make life easier]
 <br/>
 <br/>
 <br/>
 <br/>
-.center[<img src="img/unsafe.png" width="40%">]
+.center[<img src="img/rustq.png" width="35%">]
 <br/>
 <br/>
 .author[Rnic / H.-S Zheng]
@@ -49,13 +49,13 @@ Rnic / 鄭弘昇
 
     * What is Lifetimes ?
 
-    * Limits of Lifetimes (some problem cases)
+    * Subtyping and variance
 
-* .highlight[**NLL**] (MIR-based borrowck)
+* .highlight[**NLL**]
 
-    * The process of NLL
+    * Phases of Borrow checker
 
-    * How NLL solve these problem
+    * Solving constraints
 
 ---
 class: center, middle
@@ -66,76 +66,185 @@ class: center, middle
 
 ---
 
-# Defintions
+# Borrow
 
-* Lifetime： Reference被使用的這段期間
+.center[<img src="img/rust-borrow.png" width="70%">]
 
-* Scope： value到其被free的這段期間
+.footnote[(by. https://rufflewind.com/img/rust-move-copy-borrow.png)]
 
 --
 
 <br/>
-.center[.pink[**Lifetime必定小於Scope**]]
+
+.center[**How long does it borrow ?**]
+
+---
+
+# Borrow
+
+### Borrow → Reference --- Lifetime
+
+a .pink[borrow] will generate a .pink[reference], and a reference will tagged with a .pink[lifetime]
 
 --
 
 ```rust
-let r = 1;
+let r;
 {
-    let x = 5;     // -+-- 'b
-    r = &x;        //  |
+    let x = 5;
+    r = &'b x;     // -+-- 'b
+                   //  |
+}                  // -+
+println!("{}", r); //
+```
+
+--
+
+```rust
+let r;             // lifetime must smaller than scope
+{
+    let x = 5;
+    r = &'b x;     // -+-- 'b
                    //  X
 }                  //  |
-println!("{}", r); // -+  Impossible, `x` alredy freed
+println!("{}", r); // -+  Impossible, `x` alredy freed here
 ```
 
 ---
 
-## Borrow
+# Lifetimes
 
-.center[<img src="img/borrow.png" width="80%">]
+## .highlight[Set of points on CFG]
 
-
-* 借用(Borrow)： 東西借給別人的這個過程
-
-* <span style="color:#3FB2FB;font-size:2.4em;"> ▃
-  </span>： 借用，可以是簡單的 `&` 又或是 `function` ... etc
-
-* 引用(Reference)： &nbsp; `&` &nbsp;、 `&mut`
-
---
-
-* .highlight[**Subtype**]表示：`'a(owner) : 'b(borrower)`
-
----
-
-## Lifetime Identifier
+.pull-left[
 
 ```rust
-fn foo<'a>(s: &'a str) -> &'a str {
----------------------------------
-    s
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0 }
+
+'bar: { B/3, B/4, C/0 }
+```
+
+----
+
+```rust
+let mut foo: T = ...;
+let mut bar: T = ...;
+let p: &'p T;
+
+p = &'foo foo;
+
+if condition {
+
+    print(*p);
+
+    p = &'bar bar;
 }
 
-fn main() {
+print(*p);
+```
 
-    let x = String::from("hello world");
+]
 
-    let y = foo(&x);            // borrow is happen here
-}
+.pull-right[
+
+.center[<img src="img/cfg.png" width="80%">]
+
+]
+
+---
+
+# Lifetimes
+
+## Original Limits
+
+```rust
+ let mut s = "hello".to_string();
+ let mut c = || s += " world"; // captures by &mut and c become FnMut
+ c();
+ println!("{}", s);
+```
+
+```
+|     let mut c = || s += " world";
+|                 -- - previous borrow occurs due to use of `s` in closure
+|                 |
+|                 mutable borrow occurs here
+|     c();
+|     println!("{}", s);
+|                    ^ immutable borrow occurs here
+| }
+| - mutable borrow ends here
+```
+
+
+---
+
+# Subtyping
+
+
+
+`'a : 'b` : lifetimes of `'a` is larger than `'b`
+
+
+```rust
+                                           +--------+
+  let p: &'p T;                            |        |
+                                'foo  +----+ Borrow +---->  'p
+  p = &'foo foo;                           |        |
+                                           +--------+
+  --------------
+
+  'foo : 'p
 ```
 
 --
 
-1. `<'a>` : declaration of lifetimes
+----
 
-2. `(s: &'a str)`
+## Location-aware subtyping
 
-3. `→ &'a str`
+`'a : 'b @ P` :
 
---
+`'a` must include all points in `'b` .pink[**that are reachable from location `P`**]
 
-- .pink[這兩個 `'a` 僅是代表對應關係，不是同個lifetime]
+---
+
+# Variance
+
+.pull-left[
+```
+          +---+---+---+---+
+          | X | 0 | + | - |
+          +---------------+
+          | 0 | 0 | 0 | 0 |
+          +---------------+
+          | + | 0 | + | - |
+          +---------------+
+          | - | 0 | - | + |
+          +---+---+---+---+
+
+```
+]
+
+.pull-right[
+```
+          +---+---+---+---+
+          | ^ | 0 | + | - |
+          +---------------+
+          | 0 | 0 | 0 | 0 |
+          +---------------+
+          | + | 0 | + | 0 |
+          +---------------+
+          | - | 0 | 0 | - |
+          +---+---+---+---+
+
+```
+]
+
+
+.footnote[(by. https://medium.com/@kennytm/variance-in-rust-964134dd5b3e)]
 
 
 ---
