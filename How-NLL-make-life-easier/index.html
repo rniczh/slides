@@ -38,9 +38,12 @@ Rnic / 鄭弘昇
 
 ‣ 交大資工碩0
 
-‣ Telegram: [{ t.me/@rnicinr }](t.me/@rnicinr)
+‣ Telegram: [{ t.me/@rnicinr }](https://t.me/@rnicinr)
 
-‣ Github: [{ github.com/rniczh }](github.com/rniczh)
+‣ Github: [{ github.com/rniczh }](https://github.com/rniczh)
+
+‣ Email: [{ mathan0203@gmail.com }](mailto:mathan0203@gmail.com)
+
 
 ---
 # Outline
@@ -49,13 +52,15 @@ Rnic / 鄭弘昇
 
     * What is Lifetimes ?
 
-    * Subtyping and variance
+    * Subtyping
 
 * .highlight[**NLL**]
 
     * Phases of Borrow checker
 
     * Solving constraints
+
+    * Limits and Alias-based formulation
 
 ---
 class: center, middle
@@ -66,7 +71,7 @@ class: center, middle
 
 ---
 
-# Borrow
+# .center[Borrow]
 
 .center[<img src="img/rust-borrow.png" width="70%">]
 
@@ -78,13 +83,22 @@ class: center, middle
 
 .center[**How long does it borrow ?**]
 
+--
+
+.center[.highlight[**NLL:] What is can borrowed here ?**]
+
 ---
 
-# Borrow
+# .center[Borrow]
 
-### Borrow → Reference --- Lifetime
+A .pink[borrow] will generate a .pink[reference], and a reference will tagged with a .pink[lifetime]
 
-a .pink[borrow] will generate a .pink[reference], and a reference will tagged with a .pink[lifetime]
+
+### Borrow
+--
+ → Reference
+--
+ --- Lifetime
 
 --
 
@@ -92,41 +106,54 @@ a .pink[borrow] will generate a .pink[reference], and a reference will tagged wi
 let r;
 {
     let x = 5;
+    r = &x;
+
+}
+println!("{}", r);
+```
+
+---
+
+# .center[Borrow]
+
+
+A .pink[borrow] will generate a .pink[reference], and a reference will tagged with a .pink[lifetime]
+
+
+### Borrow → Reference --- Lifetime
+
+
+```rust
+let r;
+{
+    let x = 5;
     r = &'b x;     // -+-- 'b
                    //  |
-}                  // -+
+*}                  // -+
 println!("{}", r); //
 ```
 
 --
 
-```rust
-let r;             // lifetime must smaller than scope
-{
-    let x = 5;
-    r = &'b x;     // -+-- 'b
-                   //  X
-}                  //  |
-println!("{}", r); // -+  Impossible, `x` alredy freed here
-```
+<br/>
+## .pink[.center[**Lifetime must smaller than Scope**]]
 
 ---
 
-# Lifetimes
+# .center[Lifetimes]
 
-## .highlight[Set of points on CFG]
+## .center[.highlight[Set of points on CFG]]
+
+--
+
+<br/>
+.center[<img src="img/cfg.png" width="40%">]
+
+---
+
+# .center[Lifetimes]
 
 .pull-left[
-
-```rust
-'p:   { A/1, B/0, B/3, B/4, C/0 }
-
-'foo: { A/1, B/0, C/0 }
-
-'bar: { B/3, B/4, C/0 }
-```
-
-----
 
 ```rust
 let mut foo: T = ...;
@@ -149,153 +176,105 @@ print(*p);
 
 .pull-right[
 
-.center[<img src="img/cfg.png" width="80%">]
+```rust
+A
+[ p = &foo     ]
+[ if condition ] ----\ (true)
+       |             |
+       |     B       v
+       |     [ print(*p)     ]
+       |     [ ...           ]
+       |     [ p = &bar      ]
+       |     [ ...           ]
+       |     [ goto C        ]
+       |             |
+       +-------------/
+       |
+C      v
+[ print(*p)    ]
+[ return       ]
+
+```
 
 ]
 
 ---
 
-# Lifetimes
+
+# .center[Lifetimes]
+
+.pull-left[
+
+```rust
+let mut foo: T = ...;
+let mut bar: T = ...;
+let p: &'p T;
+
+*p = &'foo foo;
+
+if condition {
+
+    print(*p);
+
+    p = &'bar bar;
+}
+
+print(*p);
+```
+
+]
+
+.pull-right[
+
+```rust
+A
+[ p = &foo     ]
+*[ if condition ] ----\ (true)
+       |             |
+       |     B       v
+*      |     [ print(*p)     ]
+       |     [ ...           ]
+       |     [ p = &bar      ]
+       |     [ ...           ]
+       |     [ goto C        ]
+       |             |
+       +-------------/
+       |
+C      v
+*[ print(*p)    ]
+[ return       ]
+
+```
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0 }
+
+'bar: { B/3, B/4, C/0 }
+```
+
+]
+
+---
+
+# .center[Lifetimes]
 
 ## Original Limits
 
 ```rust
  let mut s = "hello".to_string();
- let mut c = || s += " world"; // captures by &mut and c become FnMut
+
+ let mut c = || s += " world"; // captured by &mut and c become FnMut
+
  c();
+
  println!("{}", s);
-```
 
-```
-|     let mut c = || s += " world";
-|                 -- - previous borrow occurs due to use of `s` in closure
-|                 |
-|                 mutable borrow occurs here
-|     c();
-|     println!("{}", s);
-|                    ^ immutable borrow occurs here
-| }
-| - mutable borrow ends here
-```
-
-
----
-
-# Subtyping
-
-
-
-`'a : 'b` : lifetimes of `'a` is larger than `'b`
-
-
-```rust
-                                           +--------+
-  let p: &'p T;                            |        |
-                                'foo  +----+ Borrow +---->  'p
-  p = &'foo foo;                           |        |
-                                           +--------+
-  --------------
-
-  'foo : 'p
 ```
 
 --
 
-----
-
-## Location-aware subtyping
-
-`'a : 'b @ P` :
-
-`'a` must include all points in `'b` .pink[**that are reachable from location `P`**]
-
----
-
-# Variance
-
-.pull-left[
-```
-          +---+---+---+---+
-          | X | 0 | + | - |
-          +---------------+
-          | 0 | 0 | 0 | 0 |
-          +---------------+
-          | + | 0 | + | - |
-          +---------------+
-          | - | 0 | - | + |
-          +---+---+---+---+
-
-```
-]
-
-.pull-right[
-```
-          +---+---+---+---+
-          | ^ | 0 | + | - |
-          +---------------+
-          | 0 | 0 | 0 | 0 |
-          +---------------+
-          | + | 0 | + | 0 |
-          +---------------+
-          | - | 0 | 0 | - |
-          +---+---+---+---+
-
-```
-]
-
-
-.footnote[(by. https://medium.com/@kennytm/variance-in-rust-964134dd5b3e)]
-
-
----
-.left-column[
-  # Limits
-]
-
-.right-column[
-.pull-left[<img src="img/compile_flow.png" width="100%">]
-
-.pull-right[
-`HIR → AST`
-
-`MIR → CFG`]]
-
----
-
-.left-column[
-  # Limits
-]
-
-.right-column[
-.pull-left[<img src="img/compile_flow.png" width="100%">]
-
-.pull-right[
-`HIR → AST`
-
-`MIR → CFG`]
-
-&nbsp;
-&nbsp;
-
-.center[.pink[NLL : MIR-based borrowck]]
-]
-
----
-
-.left-column[
-  # Limits
-  ## Problem1
-]
-
-.right-column[
-
-```rust
- let mut s = "hello".to_string();
- let mut c = || s += " world";
- c();
- println!("{}", s);
-```
-
 ```
 |     let mut c = || s += " world";
 |                 -- - previous borrow occurs due to use of `s` in closure
@@ -308,86 +287,239 @@ print(*p);
 | - mutable borrow ends here
 ```
 
-]
-
 ---
 
-.left-column[
-  # Limits
-  ## Problem1
-]
+# .center[Lifetimes]
 
-.right-column[
+## How to solve it ?
 
 ```rust
  let mut s = "hello".to_string();
- let mut c = || s += " world";
- c();
- println!("{}", s);
+
+ let mut c = || s += " world"; ---+--- 'a
+                                  |
+ c();                             |
+                                  |
+ println!("{}", s);          -----+--- 'b
+                                  |
+                            ------+
 ```
 
-```rust
- 'a: {
-     let mut s = "hello".to_string();
-     'b: {
-         let c = || s += " world"; // &mut
-         'c: {
-             c();
-             printlnt("{}", s);    // &
-         }
-     }
- }
-```
-
-1. `'b` : 可變借用
-
-2. `'c` : 不可變借用
-
-3. `'c` is within `b`
-
-----
-
-→ 不可變借用與可變借用同時發生
-
-]
-
----
-
-.left-column[
-  # Limits
-  ## Problem1
-]
-
-.right-column[
+--
 
 ```rust
  let mut s = "hello".to_string();
- let mut c = || s += " world";
- c();
- println!("{}", s);
+* {
+     let mut c = || s += " world"; ---+--- 'a
+                                      |
+     c();                             |
+* }                               ----+
+
+ println!("{}", s);               ----+--- 'b
+
 ```
-
-.highlight[**解決辦法：**]
-
-```rust
- let mut s = "hello".to_string();
- {
-     let mut c = || s += " world";
-     c();
- }
- println!("{}", s);
-```
-
-]
 
 ---
-.left-column[
-  # Limits
-  ## Problem1
-  ## Problem2
+
+# .center[Subtyping]
+
+.center[`'a : 'b` : lifetimes of `'a` is outlives `'b`]
+
+--
+
+```rust
+
+  let p: &'p T;                            +--------+
+                                           |        |
+  p = &'foo foo;                'foo  +----+ Borrow +---->  'p
+                                           |        |
+                                           +--------+
+```
+
+---
+
+# .center[Subtyping]
+
+.center[`'a : 'b` : lifetimes of `'a` is outlives `'b`]
+
+```rust
+
+  let p: &'p T;                            +--------+
+                                           |        |
+  p = &'foo foo;                'foo  +----+    :   +---->  'p
+                                           |        |
+  ______________                           +--------+
+
+   'foo : 'p
+
+```
+
+---
+
+# .center[Variance]
+
+.pull-left[
+
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{font-family:Arial, sans-serif;font-size:14px;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg th{font-family:Arial, sans-serif;font-size:14px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg .tg-60uc{font-size:16px;border-color:#000000;text-align:center;vertical-align:top}
+.tg .tg-ltfh{font-size:16px;background-color:#9aff99;border-color:#000000;text-align:center;vertical-align:top}
+</style>
+<table class="tg">
+  <tr>
+    <th class="tg-60uc"></th>
+    <th class="tg-60uc">'a</th>
+    <th class="tg-60uc">T</th>
+    <th class="tg-60uc">U</th>
+  </tr>
+  <tr>
+    <td class="tg-60uc">&amp;'a T<br></td>
+    <td class="tg-60uc">covariant</td>
+    <td class="tg-60uc">covariant</td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">&amp;'a mut T </td>
+    <td class="tg-60uc">covariant<br></td>
+    <td class="tg-ltfh">invariant</td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">Box&lt;T&gt;</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-60uc">covariant<br></td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">Vec&lt;T&gt;</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-60uc">covariant<br></td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">UnsafeCell&lt;T&gt;</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-ltfh">invariant</td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">Cell&lt;T&gt;</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-ltfh">invariant</td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">fn(T) -&gt; U</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-60uc">contravariant</td>
+    <td class="tg-60uc">covariant</td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">*const T</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-60uc">covariant<br></td>
+    <td class="tg-60uc"></td>
+  </tr>
+  <tr>
+    <td class="tg-60uc">*mut T</td>
+    <td class="tg-60uc"></td>
+    <td class="tg-ltfh">invariant</td>
+    <td class="tg-60uc"></td>
+  </tr>
+</table>
 ]
 
-.right-column[
+
+.pull-right[
+
+
+
+```
+ +---+---+---+---+
+ | X | 0 | + | - |
+ +---------------+  0: invariant
+ | 0 | 0 | 0 | 0 |  +: convariant
+ +---------------+  -: contravariant
+ | + | 0 | + | - |
+ +---------------+
+ | - | 0 | - | + |
+ +---+---+---+---+
+
+
+
+ +---+---+---+---+
+ | ^ | 0 | + | - |
+ +---------------+
+ | 0 | 0 | 0 | 0 |
+ +---------------+
+ | + | 0 | + | 0 |
+ +---------------+
+ | - | 0 | 0 | - |
+ +---+---+---+---+
+
+```
+]
+
+.footnote[(by. https://medium.com/@kennytm/variance-in-rust-964134dd5b3e)]
+
+---
+
+
+## .center[Example]
+
+
+```rust
+let a = 1;
+let p: Cell<&'p i32> = Cell::new(&'a a);
+
+=> 'a: 'p, 'p: 'a
+
+```
+
+
+---
+
+
+## .center[Example]
+
+
+```rust
+use std::marker::PhantomData;
+
+pub struct Magic<'a>(PhantomData<&'a mut &'a ()>);
+
+impl<'a> Magic<'a> {
+    pub fn as_ref(&'a self) -> &'a Self {
+        &self
+    }
+}
+
+fn main() {
+    let pin = Magic(PhantomData);
+    {
+        pin.as_ref();
+    }
+    pin;
+}
+
+```
+
+.footnote[(ref. https://iovxw.net/p/phantomdata-magic/)]
+
+---
+class: center, middle
+
+# NLL
+
+.center[<img src="img/04_04-nll-02.png" width="80%" alt="https://hacks.mozilla.org/2018/12/rust-2018-is-here/">]
+
+---
+
+## .center[Example]
+
+.footnote[[(play: link to play.rust-lang.org/ of this code with eidtion=2015)](https://play.rust-lang.org/?version=stable&mode=debug&edition=2015&gist=6deffeeb7145662d49b87dbe35dee1a1)]
 
 ```rust
  fn process_or_default(map: &mut HashMap<usize, String>,
@@ -404,6 +536,29 @@ print(*p);
     }
  }
 ```
+
+---
+
+## .center[Example]
+
+.footnote[[(play: link to play.rust-lang.org/ of this code with eidtion=2015)](https://play.rust-lang.org/?version=stable&mode=debug&edition=2015&gist=6deffeeb7145662d49b87dbe35dee1a1)]
+
+```rust
+ fn process_or_default(map: &mut HashMap<usize, String>,
+                       key: usize)
+ {
+    match map.get_mut(&key) {  --------------+-- 'a
+        Some(value) => {                     |
+            process(value);                  |
+            return;                          |
+        }                                    |
+        None => {                            |
+            map.insert(key, V::default()); ----- 'b
+        }                                    |
+    } <--------------------------------------+
+ }
+```
+
 
 ```
 |     match map.get_mut(&key) {
@@ -416,17 +571,11 @@ print(*p);
 |     - first borrow ends here
 ```
 
-]
-
 ---
 
-.left-column[
-  # Limits
-  ## Problem1
-  ## Problem2
-]
+## .center[Solution]
 
-.right-column[
+.footnote[[(play: link to play.rust-lang.org/ of this code with eidtion=2015)](https://play.rust-lang.org/?version=stable&mode=debug&edition=2015&gist=6deffeeb7145662d49b87dbe35dee1a1)]
 
 ```rust
  fn process_or_default(map: &mut HashMap<usize, String>,
@@ -438,29 +587,58 @@ print(*p);
             return;
         }
         None => {
-            map.insert(key, V::default());
+*
         }
     }
- }
+*   map.insert(key, V::default());
+}
 ```
 
-.highlight[**解決辦法：**]
+--
 
-```rust
- match map.get_mut(&key) {
-     Some(value) => {
-         process(value);
-         return;
-     }
-     None => { }
- }
- map.insert(key, V::default());
-```
+<br/>
 
+## .center[.pink[But it's annoying]]
+
+---
+
+
+# .center[Phases of Borrowck]
+
+<br/>
+
+### 1. Building liveness and constraints
+
+### 2. Infer the lifetimes
+
+### 3. Compute loans in scope
+
+### 4. Check action and report errors
+
+---
+
+
+# .center[Location-aware subtyping]
+
+.center[`('a : 'b) @ P` :
+
+`'a` must include all points in `'b`
+
+.pink[**that are reachable from**] location `P`
 ]
 
+
 ---
+
+class: center, middle
+
+# WIP
+
 ---
+
+class: center, middle
+
+# That's All.
 
     </textarea>
     <script src="https://gnab.github.io/remark/downloads/remark-latest.min.js"></script>
