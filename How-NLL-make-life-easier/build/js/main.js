@@ -1,0 +1,1 @@
+var slideShow=remark.create({ratio:"4:3",navigation:{scroll:!0,touch:!0,click:!1},slideNumberFormat:"%current%/%total%",slideNumberFormat:function(i,t){return i+"/"+t},countIncrementalSlides:!0,highlightLanguage:"remark",highlightStyle:"github",highlightLines:!0,highlightSpans:!1});
