@@ -461,47 +461,64 @@ C      v
 
 ---
 
-
 ## .center[Example]
 
-
 ```rust
-let a = 1;
-let p: Cell<&'p i32> = Cell::new(&'a a);
+let a = 5;
 
-=> 'a: 'p, 'p: 'a
-
+let b = &a;
 ```
-
 
 ---
 
+## .center[Example]
+
+```rust
+let a = 5;
+
+let b: &'b i32 = &'a a;
+
+_______________________
+
+'a : 'b
+```
+
+--
+
+```rust
+let x = 42;
+
+let p = Cell::new(&x);
+```
+
+---
 
 ## .center[Example]
 
+```rust
+let a = 5;
+
+let b: &'b i32 = &'a a;
+
+_______________________
+
+'a : 'b
+```
+
 
 ```rust
-use std::marker::PhantomData;
+let x = 42;
 
-pub struct Magic<'a>(PhantomData<&'a mut &'a ()>);
+let p: Cell<&'p i32> = Cell::new(&'x x);
 
-impl<'a> Magic<'a> {
-    pub fn as_ref(&'a self) -> &'a Self {
-        &self
-    }
-}
+________________________________________
 
-fn main() {
-    let pin = Magic(PhantomData);
-    {
-        pin.as_ref();
-    }
-    pin;
-}
+'x: 'p
+
+'p: 'x
 
 ```
 
-.footnote[(ref. https://iovxw.net/p/phantomdata-magic/)]
 
 ---
 class: center, middle
@@ -512,7 +529,7 @@ class: center, middle
 
 ---
 
-## .center[Example]
+## .center[Problem]
 
 .footnote[[(play: link to play.rust-lang.org/ of this code with eidtion=2015)](https://play.rust-lang.org/?version=stable&mode=debug&edition=2015&gist=6deffeeb7145662d49b87dbe35dee1a1)]
 
@@ -534,7 +551,7 @@ class: center, middle
 
 ---
 
-## .center[Example]
+## .center[Problem]
 
 .footnote[[(play: link to play.rust-lang.org/ of this code with eidtion=2015)](https://play.rust-lang.org/?version=stable&mode=debug&edition=2015&gist=6deffeeb7145662d49b87dbe35dee1a1)]
 
@@ -602,7 +619,7 @@ class: center, middle
 
 <br/>
 
-### 1. Building liveness and constraints
+### 1. Build liveness and constraints
 
 ### 2. Infer the lifetimes
 
@@ -612,16 +629,681 @@ class: center, middle
 
 ---
 
+class: center, middle
+
+# Demo
+
+.footnote[(ref. Prototype of NLL https://github.com/nikomatsakis/borrowck)]
+
+---
+
 
 # .center[Location-aware subtyping]
+
+<br/>
+
+.center[`'a : 'b` :
+
+Lifetimes of `'a` must outlives `'b`
+
+]
+
+
+
+---
+
+# .center[Location-aware subtyping]
+
+<br/>
 
 .center[`('a : 'b) @ P` :
 
 `'a` must include all points in `'b`
 
 .pink[**that are reachable from**] location `P`
+
 ]
 
+--
+
+.center[.highlight[**Doing DFS on CFG**]]
+
+
+---
+
+## 1. Build liveness and contraints
+
+--
+
+.pull-left[
+
+```rust
+let foo = 2;
+let bar = 5;
+let mut p: &i32;
+
+p = &foo;
+
+if condition {
+
+   do_something(p);
+
+   p = &bar;
+}
+
+do_something(p);
+
+```
+
+]
+
+---
+
+## 1. Build liveness and contraints
+
+.pull-left[
+
+```rust
+let foo = 2;
+let bar = 5;
+let mut p: &i32;
+
+p = &foo;
+
+if condition {
+
+   do_something(p);
+
+   p = &bar;
+}
+
+do_something(p);
+
+```
+
+]
+
+.pull-right[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+---
+
+## 1. Build .highlight[liveness] and contraints
+
+> **liveness**:
+> a variable 𝑣 is live at point 𝑝 if and only if
+> there exists a path in CFG from 𝑝 to a use of 𝑣 along which 𝑣 is not redefined.
+
+.pull-right[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+
+---
+
+## 1. Build .highlight[liveness] and contraints
+
+> **liveness**:
+> a variable 𝑣 is .pink[**live at point 𝑝**] if and only if
+> there exists a path in CFG .pink[**from 𝑝 to a use of 𝑣**] along which 𝑣 is not redefined.
+
+.pull-right[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+--
+
+.pull-left[
+
+```rust
+'p:   {
+
+'foo: {
+
+'bar: {
+```
+
+]
+
+---
+
+## 1. Build .highlight[liveness] and contraints
+
+> **liveness**:
+> a variable 𝑣 is .pink[**live at point 𝑝**] if and only if
+> there exists a path in CFG .pink[**from 𝑝 to a use of 𝑣**] along which 𝑣 is not redefined.
+
+.pull-right[
+```rust
+A
+0[ p = &foo     ]
+*1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+*      |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+*      |    3[ ...             ]
+*      |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+*0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-left[
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0
+
+'foo: {
+
+'bar: {
+```
+
+]
+
+
+---
+
+## 1. Build liveness and .highlight[contraints]
+
+> **contraints**:
+> it's mean lifetime contraints which is converted from subtyping rule.
+
+.pull-right[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-left[
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0
+
+'foo: {
+
+'bar: {
+```
+
+]
+
+---
+
+## 1. Build liveness and .highlight[contraints]
+
+> **contraints**:
+> it's mean lifetime contraints which is .pink[**converted from subtyping rule**], e.g. `(&'a T : &'b U)` will convert to `('a : 'b)`.
+
+.pull-right[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-left[
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0
+
+'foo: {
+
+'bar: {
+```
+
+]
+
+
+---
+
+## 1. Build liveness and .highlight[contraints]
+
+> **contraints**:
+> it's mean lifetime contraints which is .pink[**converted from subtyping rule**].
+
+.pull-right[
+```rust
+p: &'p T;
+
+A
+0[ p = &'foo foo ]
+1[ if condition  ]---\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &'bar bar   ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-left[
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0
+
+'foo: {
+
+'bar: {
+```
+
+]
+
+---
+
+## 1. Build liveness and .highlight[contraints]
+
+> **contraints**:
+> it's mean lifetime contraints which is .pink[**converted from subtyping rule**].
+
+.pull-right[
+```rust
+p: &'p T;
+
+A
+0[ p = &'foo foo ]
+1[ if condition  ]---\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &'bar bar   ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+--
+
+.pull-left[
+<br/>
+- <span style="font-family:monospace; font-size:24px;">**( .pink['foo : 'p] ) .purple[@ A/0]**</span>
+]
+--
+.pull-left[
+- <span style="font-family:monospace; font-size:24px;">**( .pink['bar : 'p] ) .purple[@ B/2]**</span>
+]
+
+---
+
+## 1. Build liveness and .highlight[contraints]
+
+> **contraints**:
+> it's mean lifetime contraints which is .pink[**converted from subtyping rule**].
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: {
+
+'bar: {
+
+`('foo : 'p) @ A/0`
+
+`('bar : 'p) @ B/2`
+
+```
+
+--
+
+.center[
+
+### Infer the lifetimes
+
+
+]
+
+--
+
+.center[
+
+### .highlight[**Solving contraints (use DFS)**]
+
+]
+
+---
+
+## 2. Infer lifetimes (solving contraints)
+
+.pull-left[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-right[
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: {
+
+'bar: {
+
+('foo : 'p) @ A/0
+
+('bar : 'p) @ B/2
+```
+]
+
+---
+
+## 2. Infer lifetimes (solving contraints)
+
+.pull-left[
+```rust
+A
+>> 0[ p = &foo  ]
+*1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+*      |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+*0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-right[
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: {
+
+'bar: {
+
+('foo : 'p) @ A/0
+
+('bar : 'p) @ B/2
+```
+]
+
+---
+
+## 2. Infer lifetimes (solving contraints)
+
+.pull-left[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+       |    2[ p = &bar        ]
+       |    3[ ...             ]
+       |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-right[
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0
+
+'bar: {
+
+('foo : 'p) @ A/0
+
+('bar : 'p) @ B/2
+```
+]
+
+---
+
+## 2. Infer lifetimes (solving contraints)
+
+.pull-left[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+>>     |    2[ p = &bar        ]
+*      |    3[ ...             ]
+*      |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+*0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-right[
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0
+
+'bar: {
+
+('foo : 'p) @ A/0
+
+('bar : 'p) @ B/2
+```
+]
+
+---
+
+## 2. Infer lifetimes (solving contraints)
+
+.pull-left[
+```rust
+A
+0[ p = &foo     ]
+1[ if condition ]----\ (true)
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]
+       |    1[ ...             ]
+>>     |    2[ p = &bar        ]
+*      |    3[ ...             ]
+*      |    4[ goto C          ]
+       |             |
+       +-------------/
+       |
+C      v
+*0[ do_something(p) ]
+1[ return          ]
+
+```
+]
+
+.pull-right[
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0
+
+'bar: { B/3, B/4, C/0
+
+('foo : 'p) @ A/0
+
+('bar : 'p) @ B/2
+```
+]
+
+---
+
+## 2. Infer lifetimes (solving contraints)
+
+<br/>
+
+
+```rust
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0 }
+
+'bar: { B/3, B/4, C/0 }
+
+('foo : 'p) @ A/0
+
+('bar : 'p) @ B/2
+```
+
+.center[<span style="font-size: 100px; color: #00cc66"> ✔ </span>]
+
+---
+
+## 3. Compute loans in scope
+
+
+
+---
+
+# play
+
+`rustc --dump-mir=main src/main.rs`
+
+`and edit dump-mir/xxxx---nll.mir`
+
+`env NLL_DEBUG=true cargo run ../test/foobar.nll | less`
 
 ---
 
