@@ -55,7 +55,7 @@ Rnic / 鄭弘昇
 
     * Solving constraints
 
-    * Limits and Alias-based formulation
+    * Future and Alias-based formulation
 
 ---
 class: center, middle
@@ -486,7 +486,7 @@ _______________________
 --
 
 ```rust
-let x = 42;
+let x = 5;
 
 let p = Cell::new(&x);
 ```
@@ -507,7 +507,7 @@ _______________________
 
 
 ```rust
-let x = 42;
+let x = 5;
 
 let p: Cell<&'p i32> = Cell::new(&'x x);
 
@@ -1142,7 +1142,7 @@ C      v
 
 'bar: {
 
-('foo : 'p) @ A/0
+>>('foo : 'p) @ A/0
 
 ('bar : 'p) @ B/2
 ```
@@ -1224,7 +1224,7 @@ C      v
 
 ('foo : 'p) @ A/0
 
-('bar : 'p) @ B/2
+>>('bar : 'p) @ B/2
 ```
 ]
 
@@ -1281,10 +1281,6 @@ C      v
 'foo: { A/1, B/0, C/0 }
 
 'bar: { B/3, B/4, C/0 }
-
-('foo : 'p) @ A/0
-
-('bar : 'p) @ B/2
 ```
 
 .center[<span style="font-size: 100px; color: #00cc66"> ✔ </span>]
@@ -1293,38 +1289,333 @@ C      v
 
 ## 3. Compute loans in scope
 
+> **loans**: a set of borrow expressions
 
+--
+
+```rust
+A/0 [ p = &'foo foo; ] // loan L0
+```
+
+```rust
+loan L0 {
+    point: A/0,
+    path: foo,
+    kind: shared,
+    region 'foo {
+        A/1, B/0, C/0
+    }
+}
+```
 
 ---
 
-# play
+## 3. Compute loans in scope
 
-`rustc --dump-mir=main src/main.rs`
+> **loans**: a set of borrow expressions
 
-`and edit dump-mir/xxxx---nll.mir`
+Borrow checker will compute loans at each point via .pink[**fixed-point dataflow computation**] with .pink[**transfer function**]:
 
-`env NLL_DEBUG=true cargo run ../test/foobar.nll | less`
+--
+
+```text
+ - Kill Li @ P If P ∉ Li.region
+
+ - Gen  Li @ P If Borrow expression occur @ P
+
+ - Kill Li @ P If LV is redefined && LV ∈ Li.path
+ ```
+
+---
+
+## 3. Compute loans in scope
+
+
+```rust
+          CFG                                   Loans @ each point
+A
+0[ p = &foo     ]                "gen  L0" path: foo, region: { A/1, B/0, C/0 }
+1[ if condition ]----\ (true)       L0
+       |             |
+       |     B       v
+       |    0[ do_something(p) ]    L0
+       |    1[ ...             ] "kill L0" (rule 1)
+       |    2[ p = &bar        ] "gen  L1" path: bar, region: { B/3, B/4, C/0 }
+       |    3[ ...             ]    L1
+       |    4[ goto C          ]    L1
+       |             |
+       +-------------/
+       |
+       v
+0[ do_something(p) ]              L0, L1
+1[ return          ]             "kill L0, L1"
+
+
+        Regions
+_________________________________
+
+'p:   { A/1, B/0, B/3, B/4, C/0 }
+
+'foo: { A/1, B/0, C/0 }
+
+'bar: { B/3, B/4, C/0 }
+
+
+```
+
+---
+
+## 4. Check action and report Error
+
+Check action at each point which dependent on loans we computed for each point.
+
+```rust
+fn access_legal(lvalue, is_shallow, is_read) {
+    let relevant_borrows = select_relevant_borrows(lvalue, is_shallow);
+
+    for borrow in relevant_borrows {
+        // shared borrows like `&x` still permit reads from `x` (but not writes)
+        if is_read && borrow.is_read { continue; }
+
+        // otherwise, report an error, because we have an access
+        // that conflicts with an in-scope borrow
+        report_error();
+    }
+}
+```
+
+.pull-left[
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{font-family:Arial, sans-serif;font-size:14px;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg th{font-family:Arial, sans-serif;font-size:14px;font-weight:normal;padding:10px 5px;border-style:solid;border-width:1px;overflow:hidden;word-break:normal;border-color:black;}
+.tg .tg-x6qq{background-color:#dae8fc;border-color:inherit;text-align:left;vertical-align:top}
+.tg .tg-n533{font-weight:bold;background-color:#dae8fc;border-color:inherit;text-align:center;vertical-align:top}
+.tg .tg-0pky{border-color:inherit;text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+  <tr>
+    <th class="tg-x6qq"></th>
+    <th class="tg-n533">read</th>
+    <th class="tg-n533">write</th>
+  </tr>
+  <tr>
+    <td class="tg-n533">shallow</td>
+    <td class="tg-0pky"></td>
+    <td class="tg-0pky">storageDead()<br>lvalue</td>
+  </tr>
+  <tr>
+    <td class="tg-n533">deep</td>
+    <td class="tg-0pky">rvalue(copy)<br>&amp;lvalue</td>
+    <td class="tg-0pky">rvalue(move)<br>&amp;mut lvalue<br>Drop(lvalue)</td>
+  </tr>
+</table>
+]
+.pull-right[
+```
+lvalue = rvalue;
+```
+]
+
+---
+
+# .center[We Make it !]
+
+--
+
+```rust
+A/0 | let mut x = 42;
+A/1 | let y = &x;
+A/2 | x += 1;
+```
+
+--
+
+```
+x: { A/0, A/1, A/2 }
+
+y: { A/1 }
+```
+
+--
+
+⇒ y will not live at A/2
+--
+ ⇒ Legal for you to write x
 
 ---
 
 class: center, middle
 
-# WIP
+# Future
+
+.center[<img src="img/1_PN0pt6mR-h8H-Q7KcrmdVQ.jpeg" width="80%">]
+
+.footnote[(Image. http://www.mccallstudios.com/)]
+
 
 ---
 
+## .center[Problem]
+
+
+.footnote[(ref. [an aliased-based formulation of the borrow checker](http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker) )]
+
+.center[We want to traversal the Thing]
+
+```rust
+struct Thing;
+
+impl Thing { fn maybe_next(&mut self) -> Option<&mut Self> { None } }
+
+fn main() {
+n    let mut temp = &mut Thing;
+    loop {
+        match temp.maybe_next() {
+            Some(v) => { temp = v; }
+            None => { }
+        }
+    }
+}
+```
+
+
+---
+
+## .center[Problem]
+
+
+.footnote[(ref. [an aliased-based formulation of the borrow checker](http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker) )]
+
+.center[We want to traversal the Thing]
+
+```rust
+struct Thing;
+
+impl Thing { fn maybe_next(&mut self) -> Option<&mut Self> { None } }
+
+fn main() {
+    let mut temp = &mut Thing;
+    loop {
+        match temp.maybe_next() {
+              ^^^^ "mutable borrow starts here in previous iteration of loop"
+
+            Some(v) => { temp = v; }
+            None => { }
+        }
+    }
+}
+```
+
+
+--
+
+.pink[**Reason:**] In `None` arm, `temp` was not reassigned.
+
+--
+
+.pink[**Why accepted in the future?**]
+
+--
+
+1. `Some` path: Killed the `loan`
+2. `None` path: `requires relation` is dropped.
+
+
+
+---
+
+class: center
+
+## What is change ?
+
+--
+
+<br/>
+
+.center[.pink[**Region 'a:**]  &nbsp; Set of points in CFG]
+
+```rust
+{ A/0, A/1, ... }
+```
+
+---
+
+class: center
+
+## What is change ?
+
+<br/>
+
+.center[.pink[**Region 'a:**]  &nbsp; ~~Set of points in CFG]~~
+
+**Set of Loans**
+
+```rust
+{ L0, L1 ... }
+```
+
+--
+
+<br/>
+
+And with some rules, but I not mentioned in this talk.
+
+---
+
+## .center[I have not mentioned in this talk]
+
+<br/>
+
+- **Reborrow contraints :** supporting prefixes rule
+
+- **Infinite Loops :** add unwind edge
+
+- **Drop variable :**n [may_dangle] → not consider live
+
+- **Named Lifetimes** : add end_regions
+
+---
+
+# Command
+
+```rust
+
+"Gen MIR information:"
+
+    rustc --dump-mir=main src/main.rs
+
+"or"
+    rustc -Z unpretty=mir src/main.rs
+
+
+"Test NLL Borrowck prototype:"
+
+    env NLL_DEBUG=true cargo run ../test/foobar.nll
+
+```
+
+---
 class: center, middle
 
 # That's All.
 
+# QA
+
+<br/>
+
+.center[**Rust Taiwan @ https://t.me/rust_tw **]
+
     </textarea>
     <script src="https://gnab.github.io/remark/downloads/remark-latest.min.js"></script>
     <script>window.remark || document.write(
-  '<script src="js/vendor/remark.min.js"><\/script>'
+    '<script src="js/vendor/remark.min.js"><\/script>'
+
 )
 
     </script>
     <script src="js/vendor/remark-language.js"></script>
     <script src="js/main.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS_HTML"></script>
   </body>
 </html>
