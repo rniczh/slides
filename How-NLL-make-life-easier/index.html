@@ -1398,9 +1398,9 @@ let y = 44;
 
 let mut p = &x;  "L0"
 
-p = &y;          "gen L1" "kill L0"
+p = &y;          "gen L1"
 
-x += 1;          "legal"
+x += 1;          "kill L0"
 
 use(*p);
 
