@@ -18,7 +18,7 @@
 <br/>
 <br/>
 <br/>
-.center[<img src="img/rustq.png" width="35%">]
+.center[<img src="img/think.png" width="33%">]
 <br/>
 <br/>
 .author[Rnic / H.-S Zheng]
@@ -36,9 +36,10 @@
 
 Rnic / 鄭弘昇
 
-‣ Telegram: [{ t.me/@rnicinr }](https://t.me/@rnicinr)
 
-‣ <span style="color:#a64dff">**Emacs**</span> 教派的信徒
+‣ <img src="img/1024px-Telegram_logo.svg.png" width="5%"> Telegram: [{ t.me/rnicinr }](https://t.me/rnicinr)
+
+‣ <span style="color:#a64dff"><img src="img/emacs.png" width="5%"> **Emacs**</span> 教派的信徒
 
 ---
 # Outline
@@ -53,9 +54,7 @@ Rnic / 鄭弘昇
 
     * Phases of Borrow checker
 
-    * Solving constraints
-
-    * Future and Alias-based formulation
+    * Future: Polonius
 
 ---
 class: center, middle
@@ -171,25 +170,9 @@ print(*p);
 
 .pull-right[
 
-```rust
-A
-[ p = &foo     ]
-[ if condition ] ----\ (true)
-       |             |
-       |     B       v
-       |     [ print(*p)     ]
-       |     [ ...           ]
-       |     [ p = &bar      ]
-       |     [ ...           ]
-       |     [ goto C        ]
-       |             |
-       +-------------/
-       |
-C      v
-[ print(*p)    ]
-[ return       ]
+.center[
 
-```
+<img src="img/flow.png" width="75%">]
 
 ]
 
@@ -217,30 +200,6 @@ if condition {
 print(*p);
 ```
 
-]
-
-.pull-right[
-
-```rust
-A
-[ p = &foo     ]
-*[ if condition ] ----\ (true)
-       |             |
-       |     B       v
-*      |     [ print(*p)     ]
-       |     [ ...           ]
-       |     [ p = &bar      ]
-       |     [ ...           ]
-       |     [ goto C        ]
-       |             |
-       +-------------/
-       |
-C      v
-*[ print(*p)    ]
-[ return       ]
-
-```
-
 ```rust
 'p:   { A/1, B/0, B/3, B/4, C/0 }
 
@@ -250,6 +209,13 @@ C      v
 ```
 
 ]
+
+.pull-right[
+
+.center[ <img src="img/flow2.png" width="75%"> ]
+
+]
+
 
 ---
 
@@ -673,34 +639,6 @@ Lifetimes of `'a` must outlives `'b`
 
 ## 1. Build liveness and contraints
 
---
-
-.pull-left[
-
-```rust
-let foo = 2;
-let bar = 5;
-let mut p: &i32;
-
-p = &foo;
-
-if condition {
-
-   do_something(p);
-
-   p = &bar;
-}
-
-do_something(p);
-
-```
-
-]
-
----
-
-## 1. Build liveness and contraints
-
 .pull-left[
 
 ```rust
@@ -868,7 +806,7 @@ C      v
 ## 1. Build liveness and .highlight[contraints]
 
 > **contraints**:
-> it's mean lifetime contraints which is converted from subtyping rule.
+> It's lifetime contraints which is converted from subtyping rule.
 
 .pull-right[
 ```rust
@@ -909,7 +847,7 @@ C      v
 ## 1. Build liveness and .highlight[contraints]
 
 > **contraints**:
-> it's mean lifetime contraints which is .pink[**converted from subtyping rule**], e.g. `(&'a T : &'b U)` will convert to `('a : 'b)`.
+> It's lifetime contraints which is .pink[**converted from subtyping rule**], e.g. `(&'a T : &'b U)` will convert to `('a : 'b)`.
 
 .pull-right[
 ```rust
@@ -951,7 +889,7 @@ C      v
 ## 1. Build liveness and .highlight[contraints]
 
 > **contraints**:
-> it's mean lifetime contraints which is .pink[**converted from subtyping rule**].
+> It's lifetime contraints which is .pink[**converted from subtyping rule**], e.g. `(&'a T : &'b U)` will convert to `('a : 'b)`.
 
 .pull-right[
 ```rust
@@ -994,7 +932,7 @@ C      v
 ## 1. Build liveness and .highlight[contraints]
 
 > **contraints**:
-> it's mean lifetime contraints which is .pink[**converted from subtyping rule**].
+> It's lifetime contraints which is .pink[**converted from subtyping rule**], e.g. `(&'a T : &'b U)` will convert to `('a : 'b)`.
 
 .pull-right[
 ```rust
@@ -1019,8 +957,6 @@ C      v
 
 ```
 ]
-
---
 
 .pull-left[
 <br/>
@@ -1036,7 +972,7 @@ C      v
 ## 1. Build liveness and .highlight[contraints]
 
 > **contraints**:
-> it's mean lifetime contraints which is .pink[**converted from subtyping rule**].
+> It's lifetime contraints which is .pink[**converted from subtyping rule**], e.g. `(&'a T : &'b U)` will convert to `('a : 'b)`.
 
 ```rust
 'p:   { A/1, B/0, B/3, B/4, C/0 }
@@ -1059,8 +995,6 @@ C      v
 
 
 ]
-
---
 
 .center[
 
@@ -1291,8 +1225,6 @@ C      v
 
 > **loans**: a set of borrow expressions
 
---
-
 ```rust
 A/0 [ p = &'foo foo; ] // loan L0
 ```
@@ -1315,8 +1247,6 @@ loan L0 {
 > **loans**: a set of borrow expressions
 
 Borrow checker will compute loans at each point via .pink[**fixed-point dataflow computation**] with .pink[**transfer function**]:
-
---
 
 ```text
  - Kill Li @ P If P ∉ Li.region
@@ -1365,9 +1295,131 @@ _________________________________
 
 ---
 
+## 3. Compute loans in scope
+
+> Another example:
+
+.pull-left[
+
+```rust
+let mut x = 22;
+
+let y = 44;
+
+let mut p = &x;
+*
+p = &y;
+
+x += 1;
+
+use(*p);
+
+```
+
+]
+
+.pull-right[
+.center[<img src="img/xy1.png" width="80%">]
+
+]
+
+---
+
+## 3. Compute loans in scope
+
+> Another example:
+
+.pull-left[
+
+```rust
+let mut x = 22;
+
+let y = 44;
+
+let mut p = &x;
+
+p = &y;
+*
+x += 1;
+
+use(*p);
+
+```
+
+]
+
+.pull-right[
+.center[<img src="img/xy2.png" width="80%">]
+
+]
+
+---
+
+## 3. Compute loans in scope
+
+> Another example:
+
+.pull-left[
+
+```rust
+let mut x = 22;
+
+let y = 44;
+
+let mut p = &x;
+
+p = &y;
+
+x += 1;
+*
+use(*p);
+
+```
+
+]
+
+.pull-right[
+.center[<img src="img/xy3.png" width="80%">]
+
+]
+
+---
+
+## 3. Compute loans in scope
+
+> Another example:
+
+.pull-left[
+
+```rust
+let mut x = 22;
+
+let y = 44;
+
+let mut p = &x;  "L0"
+
+p = &y;          "gen L1" "kill L0"
+
+x += 1;          "legal"
+
+use(*p);
+
+```
+
+]
+
+.pull-right[
+.center[<img src="img/xy3.png" width="80%">]
+
+]
+
+
+
+---
+
 ## 4. Check action and report Error
 
-Check action at each point which dependent on loans we computed for each point.
+Check action at each point which dependent on loans we computed before.
 
 ```rust
 fn access_legal(lvalue, is_shallow, is_read) {
@@ -1406,14 +1458,21 @@ fn access_legal(lvalue, is_shallow, is_read) {
   </tr>
   <tr>
     <td class="tg-n533">deep</td>
-    <td class="tg-0pky">rvalue(copy)<br>&amp;lvalue</td>
-    <td class="tg-0pky">rvalue(move)<br>&amp;mut lvalue<br>Drop(lvalue)</td>
+    <td class="tg-0pky"><span style="color: blue">rvalue(copy)<br>&amp;lvalue</span></td>
+    <td class="tg-0pky"><span style="color: blue">rvalue(move)<br>&amp;mut lvalue</span><br>Drop(lvalue)</td>
   </tr>
 </table>
 ]
+
+
 .pull-right[
-```
-lvalue = rvalue;
+
+lvalue = <span style="color: blue">rvalue</span>;
+
+```rust
+x = x + 1
+
+// shallow access to lvalue x
 ```
 ]
 
@@ -1439,19 +1498,33 @@ y: { A/1 }
 
 --
 
-⇒ y will not live at A/2
+⇒ y is not live at A/2
 --
  ⇒ Legal for you to write x
 
 ---
-
 class: center, middle
 
-# Future
+# Future: Polonius
 
-.center[<img src="img/1_PN0pt6mR-h8H-Q7KcrmdVQ.jpeg" width="80%">]
+<!-- .center[<img src="img/1_PN0pt6mR-h8H-Q7KcrmdVQ.jpeg" width="80%">] -->
 
-.footnote[(Image. http://www.mccallstudios.com/)]
+.center[<img src="img/polonius-project.png" width="60%">]
+
+---
+
+# .center[Polonius]
+
+
+- He is chief counsellor of the king
+
+- A busy-body, [who] is accordingly officious, garrulous, and impertinent
+
+- Polonius hides himself behind an arras in Gertrude's room. Hamlet deals roughly with his mother, causing her to cry for help. Polonius echoes the request for help and is heard by Hamlet, who then mistakes the voice for Claudius' and stabs through the arras and kills him.
+
+
+.footnote[(ref. https://en.wikipedia.org/wiki/Polonius)]
+
 
 
 ---
@@ -1461,7 +1534,7 @@ class: center, middle
 
 .footnote[(ref. [an aliased-based formulation of the borrow checker](http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker) )]
 
-.center[We want to traversal the Thing]
+.center[We want to traversal the Thing and loop forever]
 
 ```rust
 struct Thing;
@@ -1487,7 +1560,7 @@ fn main() {
 
 .footnote[(ref. [an aliased-based formulation of the borrow checker](http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker) )]
 
-.center[We want to traversal the Thing]
+.center[We want to traversal the Thing and loop forever]
 
 ```rust
 struct Thing;
@@ -1521,7 +1594,42 @@ fn main() {
 1. `Some` path: Killed the `loan`
 2. `None` path: `requires relation` is dropped.
 
+---
 
+
+## .center[Problem]
+
+
+.footnote[(ref. [an aliased-based formulation of the borrow checker](http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker) )]
+
+.center[We want to traversal the Thing and loop forever]
+
+```rust
+struct Thing;
+
+impl Thing { fn maybe_next(&mut self) -> Option<&mut Self> { None } }
+
+fn main() {
+    let mut temp = &mut Thing;
+    loop {
+        match temp.maybe_next() {
+              ^^^^ "mutable borrow starts here in previous iteration of loop"
+
+            Some(v) => { temp = v; }
+            None => { }
+        }
+    }
+}
+```
+
+```rust
+R1 live @ P
+R1 require L @ P
+________________
+
+L live @ p
+
+```
 
 ---
 
@@ -1559,7 +1667,7 @@ class: center
 
 <br/>
 
-And with some rules, but I not mentioned in this talk.
+And with some rules, but I'm not mentioned in this talk, e.g. `require_relation`, `borrow_region`...etc
 
 ---
 
@@ -1571,7 +1679,27 @@ And with some rules, but I not mentioned in this talk.
 
 - **Infinite Loops :** add unwind edge
 
-- **Drop variable :**n [may_dangle] → not consider live
+- **Drop variable :** [may_dangle] → not consider live
+
+- **Named Lifetimes** : add end_regions
+
+---
+
+## .center[I have not mentioned in this talk]
+
+<br/>
+
+- **Reborrow contraints :** supporting prefixes rule
+
+- **Infinite Loops :** add unwind edge
+
+- **Drop variable :** [may_dangle] → not consider live
+
+```rust
+            &'a T   // 'a is [may_dangle]
+
+            Foo<'a> and you impl Drop // 'a cannot dangle
+```
 
 - **Named Lifetimes** : add end_regions
 
@@ -1596,6 +1724,22 @@ And with some rules, but I not mentioned in this talk.
 ```
 
 ---
+
+
+# .center[reference]
+
+
+
+(subtype: https://doc.rust-lang.org/nomicon/subtyping.html)
+
+(variance: https://medium.com/@kennytm/variance-in-rust-964134dd5b3e)
+
+(nll: https://github.com/rust-lang/rfcs/blob/master/text/2094-nll.md)
+
+(alias-based-formulation: http://smallcultfollowing.com/babysteps/blog/2018/04/27/an-alias-based-formulation-of-the-borrow-checker/)
+
+
+---
 class: center, middle
 
 # That's All.
@@ -1604,7 +1748,7 @@ class: center, middle
 
 <br/>
 
-.center[**Rust Taiwan @ https://t.me/rust_tw **]
+ .center[<img src="img/rust_logo.jpg" width="5%"> **Rust Taiwan @ https://t.me/rust_tw **]
 
     </textarea>
     <script src="https://gnab.github.io/remark/downloads/remark-latest.min.js"></script>
